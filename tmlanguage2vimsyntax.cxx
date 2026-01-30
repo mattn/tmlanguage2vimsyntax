@@ -587,14 +587,18 @@ void TmLanguage2VimSyntax::collectSyntaxGroups(
 void TmLanguage2VimSyntax::generateSyntaxRules(
     std::ostream &os, const std::vector<Pattern> &patterns,
     const std::string &parentGroup) const {
-  for (const auto &pattern : patterns) {
+  for (size_t i = 0; i < patterns.size(); ++i) {
+    const auto &pattern = patterns[i];
+    // Only nested patterns (with parentGroup) are contained
+    bool shouldBeContained = !parentGroup.empty();
+
     if (!pattern.match.empty()) {
       std::string groupName = convertScopeToVim(pattern.name);
       if (!groupName.empty()) {
         std::string vimRegex = convertRegexToVim(pattern.match);
 
         os << "syntax match " << groupName;
-        if (!parentGroup.empty()) {
+        if (shouldBeContained) {
           os << " contained";
         }
         // Use @ as delimiter to avoid conflicts with / in patterns
@@ -622,7 +626,7 @@ void TmLanguage2VimSyntax::generateSyntaxRules(
         } else {
           os << matchGroup << "_region";
         }
-        if (!parentGroup.empty()) {
+        if (shouldBeContained) {
           os << " contained";
         }
         if (!matchGroup.empty()) {
@@ -664,11 +668,11 @@ void TmLanguage2VimSyntax::generateSyntaxRules(
 
 void TmLanguage2VimSyntax::generateRepositoryRules(std::ostream &os) const {
   // Define priority order - specific patterns first, generic patterns last
+  // Note: Later definitions have higher priority in Vim
   std::vector<std::string> priorityOrder = {"keywords",
                                             "package_name",
                                             "import",
                                             "imports",
-                                            "comments",
                                             "string_literals",
                                             "raw_string_literals",
                                             "runes",
@@ -677,7 +681,8 @@ void TmLanguage2VimSyntax::generateRepositoryRules(std::ostream &os) const {
                                             "built_in_functions",
                                             "operators",
                                             "delimiters",
-                                            "language_constants"};
+                                            "language_constants",
+                                            "comments"};
 
   std::vector<std::string> lowPriorityOrder = {
       "other_variables", "variable_assignment",
@@ -738,15 +743,18 @@ void TmLanguage2VimSyntax::generateRepositoryRules(std::ostream &os) const {
         // Don't generate syntax match for patterns we've handled with syntax
         // keyword Skip generateSyntaxRules for keywords
         processed.insert(name);
+        // Note: syntax keyword doesn't count for isFirstRule since keywords are
+        // always top-level
         continue;
       }
 
       // Special handling for package_name - add package keyword first
       if (name == "package_name") {
         os << "syntax keyword Go_keyword_package_go package\n";
+        // Note: syntax keyword doesn't count for isFirstRule
       }
 
-      generateSyntaxRules(os, {it->second});
+      generateSyntaxRules(os, it->second.patterns);
       processed.insert(name);
     }
   }
@@ -757,7 +765,7 @@ void TmLanguage2VimSyntax::generateRepositoryRules(std::ostream &os) const {
         std::find(lowPriorityOrder.begin(), lowPriorityOrder.end(), name) ==
             lowPriorityOrder.end()) {
       os << "\" Repository rule: " << name << "\n";
-      generateSyntaxRules(os, {rule});
+      generateSyntaxRules(os, rule.patterns);
       processed.insert(name);
     }
   }
@@ -767,7 +775,7 @@ void TmLanguage2VimSyntax::generateRepositoryRules(std::ostream &os) const {
     auto it = grammar_.repository.rules.find(name);
     if (it != grammar_.repository.rules.end()) {
       os << "\" Repository rule: " << name << "\n";
-      generateSyntaxRules(os, {it->second});
+      generateSyntaxRules(os, it->second.patterns);
       processed.insert(name);
     }
   }
