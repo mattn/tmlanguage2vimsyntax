@@ -118,13 +118,61 @@ Pattern TmLanguage2VimSyntax::parsePattern(const nlohmann::json &patternJson) {
 
 std::string
 TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
+  std::string preprocessed = regex;
+
+  // Check for (?x) extended mode and remove whitespace/newlines if present
+  if (regex.find("(?x)") != std::string::npos) {
+    std::string result;
+    bool inExtendedMode = false;
+    bool inCharClass = false;
+    bool escaped = false;
+
+    for (size_t i = 0; i < regex.length(); ++i) {
+      // Check for (?x)
+      if (!escaped && i + 3 < regex.length() && regex.substr(i, 4) == "(?x)") {
+        inExtendedMode = true;
+        i += 3; // Skip (?x), will increment again in loop
+        continue;
+      }
+
+      if (escaped) {
+        result += regex[i];
+        escaped = false;
+        continue;
+      }
+
+      if (regex[i] == '\\') {
+        result += regex[i];
+        escaped = true;
+        continue;
+      }
+
+      if (regex[i] == '[')
+        inCharClass = true;
+      if (regex[i] == ']')
+        inCharClass = false;
+
+      // In extended mode, skip whitespace and newlines outside character
+      // classes
+      if (inExtendedMode && !inCharClass &&
+          (regex[i] == ' ' || regex[i] == '\t' || regex[i] == '\n' ||
+           regex[i] == '\r')) {
+        continue;
+      }
+
+      result += regex[i];
+    }
+
+    preprocessed = result;
+  }
+
   std::string result;
   size_t i = 0;
 
-  while (i < regex.length()) {
+  while (i < preprocessed.length()) {
     // Handle escaped characters from input
-    if (regex[i] == '\\' && i + 1 < regex.length()) {
-      char next = regex[i + 1];
+    if (preprocessed[i] == '\\' && i + 1 < preprocessed.length()) {
+      char next = preprocessed[i + 1];
 
       // In Oniguruma:
       // \( \) \{ \} = literal characters
@@ -146,23 +194,46 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
 
       if (next == '|' || next == '+' || next == '?' || next == '=') {
         // Oniguruma \| \+ \? \= -> Vim | + ? =
+        // But for \|, use [|] to avoid confusion with Vim's \| operator
+        if (next == '|') {
+          result += "[|]";
+        } else {
+          result += next;
+        }
+        i += 2;
+        continue;
+      }
+
+      if (next == '&') {
+        // Oniguruma \& -> Vim & (literal in Vim)
         result += next;
         i += 2;
         continue;
       }
 
       // Keep other escaped sequences as-is (e.g., \b, \w, \d, \s, etc.)
-      result += regex[i];
+      result += preprocessed[i];
       result += next;
       i += 2;
       continue;
     }
 
     // Handle special Oniguruma/PCRE constructs
-    if (regex[i] == '(' && i + 1 < regex.length() && regex[i + 1] == '?') {
+    if (preprocessed[i] == '(' && i + 1 < preprocessed.length() &&
+        preprocessed[i + 1] == '?') {
       // Special group construct
-      if (i + 2 < regex.length()) {
-        char c = regex[i + 2];
+      if (i + 2 < preprocessed.length()) {
+        char c = preprocessed[i + 2];
+
+        // Handle modifiers like (?x), (?i), (?m) - just skip them as Vim
+        // doesn't support them inline
+        if (c == 'x' || c == 'i' || c == 'm' || c == 's') {
+          if (i + 3 < preprocessed.length() && preprocessed[i + 3] == ')') {
+            // Skip the modifier
+            i += 4;
+            continue;
+          }
+        }
 
         if (c == ':') {
           // Non-capturing group (?:...) -> \%(...\) in Vim
@@ -171,16 +242,16 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
           // Process content recursively
           int depth = 1;
           std::string inner;
-          while (i < regex.length() && depth > 0) {
-            if (regex[i] == '\\' && i + 1 < regex.length()) {
-              inner += regex[i];
-              inner += regex[i + 1];
+          while (i < preprocessed.length() && depth > 0) {
+            if (preprocessed[i] == '\\' && i + 1 < preprocessed.length()) {
+              inner += preprocessed[i];
+              inner += preprocessed[i + 1];
               i += 2;
               continue;
             }
-            if (regex[i] == '(')
+            if (preprocessed[i] == '(')
               depth++;
-            if (regex[i] == ')') {
+            if (preprocessed[i] == ')') {
               depth--;
               if (depth == 0) {
                 result += convertRegexToVim(inner);
@@ -189,7 +260,7 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
                 break;
               }
             }
-            inner += regex[i];
+            inner += preprocessed[i];
             i++;
           }
           continue;
@@ -198,16 +269,16 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
           i += 3;
           int depth = 1;
           std::string inner;
-          while (i < regex.length() && depth > 0) {
-            if (regex[i] == '\\' && i + 1 < regex.length()) {
-              inner += regex[i];
-              inner += regex[i + 1];
+          while (i < preprocessed.length() && depth > 0) {
+            if (preprocessed[i] == '\\' && i + 1 < preprocessed.length()) {
+              inner += preprocessed[i];
+              inner += preprocessed[i + 1];
               i += 2;
               continue;
             }
-            if (regex[i] == '(')
+            if (preprocessed[i] == '(')
               depth++;
-            if (regex[i] == ')') {
+            if (preprocessed[i] == ')') {
               depth--;
               if (depth == 0) {
                 // Convert inner pattern to Vim format
@@ -217,7 +288,7 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
                 break;
               }
             }
-            inner += regex[i];
+            inner += preprocessed[i];
             i++;
           }
           continue;
@@ -226,16 +297,16 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
           i += 3;
           int depth = 1;
           std::string inner;
-          while (i < regex.length() && depth > 0) {
-            if (regex[i] == '\\' && i + 1 < regex.length()) {
-              inner += regex[i];
-              inner += regex[i + 1];
+          while (i < preprocessed.length() && depth > 0) {
+            if (preprocessed[i] == '\\' && i + 1 < preprocessed.length()) {
+              inner += preprocessed[i];
+              inner += preprocessed[i + 1];
               i += 2;
               continue;
             }
-            if (regex[i] == '(')
+            if (preprocessed[i] == '(')
               depth++;
-            if (regex[i] == ')') {
+            if (preprocessed[i] == ')') {
               depth--;
               if (depth == 0) {
                 std::string converted = convertRegexToVim(inner);
@@ -244,27 +315,27 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
                 break;
               }
             }
-            inner += regex[i];
+            inner += preprocessed[i];
             i++;
           }
           continue;
-        } else if (c == '<' && i + 3 < regex.length()) {
-          char d = regex[i + 3];
+        } else if (c == '<' && i + 3 < preprocessed.length()) {
+          char d = preprocessed[i + 3];
           if (d == '=') {
             // Positive lookbehind (?<=...) -> (...)\@<= in Vim
             i += 4;
             int depth = 1;
             std::string inner;
-            while (i < regex.length() && depth > 0) {
-              if (regex[i] == '\\' && i + 1 < regex.length()) {
-                inner += regex[i];
-                inner += regex[i + 1];
+            while (i < preprocessed.length() && depth > 0) {
+              if (preprocessed[i] == '\\' && i + 1 < preprocessed.length()) {
+                inner += preprocessed[i];
+                inner += preprocessed[i + 1];
                 i += 2;
                 continue;
               }
-              if (regex[i] == '(')
+              if (preprocessed[i] == '(')
                 depth++;
-              if (regex[i] == ')') {
+              if (preprocessed[i] == ')') {
                 depth--;
                 if (depth == 0) {
                   std::string converted = convertRegexToVim(inner);
@@ -273,7 +344,7 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
                   break;
                 }
               }
-              inner += regex[i];
+              inner += preprocessed[i];
               i++;
             }
             continue;
@@ -282,16 +353,16 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
             i += 4;
             int depth = 1;
             std::string inner;
-            while (i < regex.length() && depth > 0) {
-              if (regex[i] == '\\' && i + 1 < regex.length()) {
-                inner += regex[i];
-                inner += regex[i + 1];
+            while (i < preprocessed.length() && depth > 0) {
+              if (preprocessed[i] == '\\' && i + 1 < preprocessed.length()) {
+                inner += preprocessed[i];
+                inner += preprocessed[i + 1];
                 i += 2;
                 continue;
               }
-              if (regex[i] == '(')
+              if (preprocessed[i] == '(')
                 depth++;
-              if (regex[i] == ')') {
+              if (preprocessed[i] == ')') {
                 depth--;
                 if (depth == 0) {
                   std::string converted = convertRegexToVim(inner);
@@ -300,7 +371,7 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
                   break;
                 }
               }
-              inner += regex[i];
+              inner += preprocessed[i];
               i++;
             }
             continue;
@@ -310,56 +381,56 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
     }
 
     // Regular capturing group (Oniguruma)
-    if (regex[i] == '(') {
+    if (preprocessed[i] == '(') {
       result += "\\(";
       i++;
       continue;
     }
 
     // Handle closing parenthesis
-    if (regex[i] == ')') {
+    if (preprocessed[i] == ')') {
       result += "\\)";
       i++;
       continue;
     }
 
     // Handle special characters that are operators in Oniguruma
-    if (regex[i] == '|') {
+    if (preprocessed[i] == '|') {
       // Oniguruma | = OR, Vim \| = OR
       result += "\\|";
       i++;
       continue;
     }
 
-    if (regex[i] == '+') {
+    if (preprocessed[i] == '+') {
       // Oniguruma + = one or more, Vim \+ = one or more
       result += "\\+";
       i++;
       continue;
     }
 
-    if (regex[i] == '?') {
+    if (preprocessed[i] == '?') {
       // Oniguruma ? = zero or one, Vim \? = zero or one
       result += "\\?";
       i++;
       continue;
     }
 
-    if (regex[i] == '{') {
+    if (preprocessed[i] == '{') {
       // Oniguruma {n,m} = quantifier, Vim \{n,m\} = quantifier
       result += "\\{";
       i++;
       continue;
     }
 
-    if (regex[i] == '}') {
+    if (preprocessed[i] == '}') {
       result += "\\}";
       i++;
       continue;
     }
 
     // All other characters pass through as-is
-    result += regex[i];
+    result += preprocessed[i];
     i++;
   }
 
@@ -584,6 +655,19 @@ void TmLanguage2VimSyntax::collectSyntaxGroups(
   }
 }
 
+// Choose a delimiter that doesn't appear in the pattern
+std::string chooseDelimiter(const std::string &pattern) {
+  // Try delimiters in order of preference
+  std::vector<char> delimiters = {'@', '#', '|', '~', '!', '%', '^', '&', '*'};
+  for (char delim : delimiters) {
+    if (pattern.find(delim) == std::string::npos) {
+      return std::string(1, delim);
+    }
+  }
+  // Fallback to @ if all else fails
+  return "@";
+}
+
 void TmLanguage2VimSyntax::generateSyntaxRules(
     std::ostream &os, const std::vector<Pattern> &patterns,
     const std::string &parentGroup) const {
@@ -596,13 +680,13 @@ void TmLanguage2VimSyntax::generateSyntaxRules(
       std::string groupName = convertScopeToVim(pattern.name);
       if (!groupName.empty()) {
         std::string vimRegex = convertRegexToVim(pattern.match);
+        std::string delim = chooseDelimiter(vimRegex);
 
         os << "syntax match " << groupName;
         if (shouldBeContained) {
           os << " contained";
         }
-        // Use @ as delimiter to avoid conflicts with / in patterns
-        os << " @" << vimRegex << "@\n";
+        os << " " << delim << vimRegex << delim << "\n";
       }
     }
     if (!pattern.begin.empty() && !pattern.end.empty()) {
@@ -620,6 +704,10 @@ void TmLanguage2VimSyntax::generateSyntaxRules(
       }
 
       if (!groupName.empty() || !matchGroup.empty()) {
+        // Choose delimiter that works for both begin and end
+        std::string combinedPattern = beginRegex + endRegex;
+        std::string delim = chooseDelimiter(combinedPattern);
+
         os << "syntax region ";
         if (!groupName.empty()) {
           os << groupName;
@@ -632,8 +720,8 @@ void TmLanguage2VimSyntax::generateSyntaxRules(
         if (!matchGroup.empty()) {
           os << " matchgroup=" << matchGroup;
         }
-        // Use @ as delimiter
-        os << " start=@" << beginRegex << "@ end=@" << endRegex << "@";
+        os << " start=" << delim << beginRegex << delim << " end=" << delim
+           << endRegex << delim;
 
         // Add contains for nested patterns - only if there are named patterns
         if (!pattern.patterns.empty()) {
