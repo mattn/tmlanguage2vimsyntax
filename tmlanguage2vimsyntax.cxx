@@ -143,8 +143,8 @@ TmLanguage2VimSyntax::convertRegexToVim(const std::string &regex) const {
         continue;
       }
 
-      if (next == '|' || next == '+' || next == '?') {
-        // Oniguruma \| \+ \? -> Vim | + ?
+      if (next == '|' || next == '+' || next == '?' || next == '=') {
+        // Oniguruma \| \+ \? \= -> Vim | + ? =
         result += next;
         i += 2;
         continue;
@@ -396,6 +396,193 @@ TmLanguage2VimSyntax::escapeVimString(const std::string &str) const {
   return escaped;
 }
 
+std::string
+TmLanguage2VimSyntax::mapScopeToHighlightGroup(const std::string &scope) const {
+  // Map TextMate scopes to standard Vim highlight groups
+  // Based on official Vim syntax files
+  if (scope.empty())
+    return "";
+
+  // Comments
+  if (scope.find("comment.line") != std::string::npos)
+    return "Comment";
+  if (scope.find("comment.block") != std::string::npos)
+    return "Comment";
+  if (scope.find("comment") != std::string::npos)
+    return "Comment";
+
+  // Keywords - more specific mappings
+  if (scope.find("keyword.package") != std::string::npos)
+    return "Statement";
+  if (scope.find("keyword.control.import") != std::string::npos)
+    return "Statement";
+  if (scope.find("keyword.control.go") != std::string::npos)
+    return "Conditional";
+  if (scope.find("keyword.control") != std::string::npos)
+    return "Conditional";
+  if (scope.find("keyword.function") != std::string::npos)
+    return "Keyword";
+  if (scope.find("keyword.var") != std::string::npos)
+    return "Keyword";
+  if (scope.find("keyword.const") != std::string::npos)
+    return "Keyword";
+  if (scope.find("keyword.type") != std::string::npos)
+    return "Keyword";
+  if (scope.find("keyword.interface") != std::string::npos)
+    return "Keyword";
+  if (scope.find("keyword.struct") != std::string::npos)
+    return "Keyword";
+  if (scope.find("keyword.map") != std::string::npos)
+    return "Keyword";
+  if (scope.find("keyword.channel") != std::string::npos)
+    return "Keyword";
+  if (scope.find("keyword.operator") != std::string::npos)
+    return "Operator";
+  if (scope.find("keyword") != std::string::npos)
+    return "Keyword";
+
+  // Storage types - Go built-in types
+  if (scope.find("storage.type.boolean") != std::string::npos)
+    return "Boolean";
+  if (scope.find("storage.type.numeric") != std::string::npos)
+    return "Type";
+  if (scope.find("storage.type.string") != std::string::npos)
+    return "Type";
+  if (scope.find("storage.type.byte") != std::string::npos)
+    return "Type";
+  if (scope.find("storage.type.rune") != std::string::npos)
+    return "Type";
+  if (scope.find("storage.type.uintptr") != std::string::npos)
+    return "Type";
+  if (scope.find("storage.type.error") != std::string::npos)
+    return "Type";
+  if (scope.find("storage.type") != std::string::npos)
+    return "Type";
+  if (scope.find("storage") != std::string::npos)
+    return "StorageClass";
+
+  // Strings
+  if (scope.find("string.quoted.double") != std::string::npos)
+    return "String";
+  if (scope.find("string.quoted.raw") != std::string::npos)
+    return "String";
+  if (scope.find("string.quoted.rune") != std::string::npos)
+    return "Character";
+  if (scope.find("string") != std::string::npos)
+    return "String";
+
+  // Constants
+  if (scope.find("constant.numeric") != std::string::npos)
+    return "Number";
+  if (scope.find("constant.character.escape") != std::string::npos)
+    return "SpecialChar";
+  if (scope.find("constant.other.placeholder") != std::string::npos)
+    return "SpecialChar";
+  if (scope.find("constant.other.rune") != std::string::npos)
+    return "Character";
+  if (scope.find("constant.language") != std::string::npos)
+    return "Boolean";
+  if (scope.find("constant") != std::string::npos)
+    return "Constant";
+
+  // Functions
+  if (scope.find("entity.name.function.support.builtin") != std::string::npos)
+    return "Function";
+  if (scope.find("entity.name.function") != std::string::npos)
+    return "Function";
+  if (scope.find("support.function.builtin") != std::string::npos)
+    return "Function";
+  if (scope.find("support.function") != std::string::npos)
+    return "Function";
+
+  // Types and entities
+  if (scope.find("entity.name.type.package") != std::string::npos)
+    return "Identifier";
+  if (scope.find("entity.name.type.any") != std::string::npos)
+    return "Type";
+  if (scope.find("entity.name.type.comparable") != std::string::npos)
+    return "Type";
+  if (scope.find("entity.name.type") != std::string::npos)
+    return "Type";
+
+  // Variables
+  if (scope.find("variable.parameter") != std::string::npos)
+    return "Identifier";
+  if (scope.find("variable.other.assignment") != std::string::npos)
+    return "Identifier";
+  if (scope.find("variable.other") != std::string::npos)
+    return "Identifier";
+  if (scope.find("variable") != std::string::npos)
+    return "Identifier";
+
+  // Punctuation - more specific
+  if (scope.find("punctuation.terminator") != std::string::npos)
+    return "Delimiter";
+  if (scope.find("punctuation.separator") != std::string::npos)
+    return "Delimiter";
+  if (scope.find("punctuation.definition.begin") != std::string::npos)
+    return "Delimiter";
+  if (scope.find("punctuation.definition.end") != std::string::npos)
+    return "Delimiter";
+  if (scope.find("punctuation.other") != std::string::npos)
+    return "Delimiter";
+  if (scope.find("punctuation") != std::string::npos)
+    return "Delimiter";
+
+  // Invalid/Error
+  if (scope.find("invalid.illegal") != std::string::npos)
+    return "Error";
+  if (scope.find("invalid") != std::string::npos)
+    return "Error";
+
+  // Support
+  if (scope.find("support.type") != std::string::npos)
+    return "Type";
+  if (scope.find("support") != std::string::npos)
+    return "Special";
+
+  // Meta
+  if (scope.find("meta.function") != std::string::npos)
+    return "Function";
+  if (scope.find("meta.type") != std::string::npos)
+    return "Type";
+
+  // Default - don't map everything to Normal
+  return "";
+}
+
+void TmLanguage2VimSyntax::collectSyntaxGroups(
+    const std::vector<Pattern> &patterns, std::set<std::string> &groups) const {
+  for (const auto &pattern : patterns) {
+    if (!pattern.name.empty()) {
+      std::string groupName = convertScopeToVim(pattern.name);
+      if (!groupName.empty()) {
+        groups.insert(pattern.name); // Store original scope name
+      }
+    }
+    // Collect beginCaptures
+    if (!pattern.beginCaptures.empty()) {
+      for (const auto &[key, scopeName] : pattern.beginCaptures) {
+        if (!scopeName.empty()) {
+          groups.insert(scopeName);
+        }
+      }
+    }
+    // Collect endCaptures
+    if (!pattern.endCaptures.empty()) {
+      for (const auto &[key, scopeName] : pattern.endCaptures) {
+        if (!scopeName.empty()) {
+          groups.insert(scopeName);
+        }
+      }
+    }
+    // Recursively collect from nested patterns
+    if (!pattern.patterns.empty()) {
+      collectSyntaxGroups(pattern.patterns, groups);
+    }
+  }
+}
+
 void TmLanguage2VimSyntax::generateSyntaxRules(
     std::ostream &os, const std::vector<Pattern> &patterns,
     const std::string &parentGroup) const {
@@ -415,16 +602,55 @@ void TmLanguage2VimSyntax::generateSyntaxRules(
     }
     if (!pattern.begin.empty() && !pattern.end.empty()) {
       std::string groupName = convertScopeToVim(pattern.name);
-      if (!groupName.empty()) {
-        std::string beginRegex = convertRegexToVim(pattern.begin);
-        std::string endRegex = convertRegexToVim(pattern.end);
+      std::string beginRegex = convertRegexToVim(pattern.begin);
+      std::string endRegex = convertRegexToVim(pattern.end);
 
-        os << "syntax region " << groupName;
+      // Handle beginCaptures - use matchgroup for first capture
+      std::string matchGroup;
+      if (!pattern.beginCaptures.empty()) {
+        auto it = pattern.beginCaptures.find("1");
+        if (it != pattern.beginCaptures.end() && !it->second.empty()) {
+          matchGroup = convertScopeToVim(it->second);
+        }
+      }
+
+      if (!groupName.empty() || !matchGroup.empty()) {
+        os << "syntax region ";
+        if (!groupName.empty()) {
+          os << groupName;
+        } else {
+          os << matchGroup << "_region";
+        }
         if (!parentGroup.empty()) {
           os << " contained";
         }
+        if (!matchGroup.empty()) {
+          os << " matchgroup=" << matchGroup;
+        }
         // Use @ as delimiter
-        os << " start=@" << beginRegex << "@ end=@" << endRegex << "@\n";
+        os << " start=@" << beginRegex << "@ end=@" << endRegex << "@";
+
+        // Add contains for nested patterns - only if there are named patterns
+        if (!pattern.patterns.empty()) {
+          std::vector<std::string> containsList;
+          for (const auto &subPattern : pattern.patterns) {
+            if (!subPattern.name.empty()) {
+              std::string subGroupName = convertScopeToVim(subPattern.name);
+              if (!subGroupName.empty()) {
+                containsList.push_back(subGroupName);
+              }
+            }
+          }
+          if (!containsList.empty()) {
+            os << " contains=";
+            for (size_t i = 0; i < containsList.size(); ++i) {
+              if (i > 0)
+                os << ",";
+              os << containsList[i];
+            }
+          }
+        }
+        os << "\n";
       }
     }
     // Process nested patterns
@@ -465,6 +691,23 @@ std::string TmLanguage2VimSyntax::generateVimSyntax() const {
   if (!grammar_.repository.rules.empty()) {
     os << "\n\" Repository rules\n";
     generateRepositoryRules(os);
+  }
+
+  // Collect all syntax groups
+  std::set<std::string> scopeNames;
+  collectSyntaxGroups(grammar_.patterns, scopeNames);
+  for (const auto &[name, rule] : grammar_.repository.rules) {
+    collectSyntaxGroups({rule}, scopeNames);
+  }
+
+  // Generate highlight links
+  os << "\n\" Highlight links\n";
+  for (const auto &scopeName : scopeNames) {
+    std::string groupName = convertScopeToVim(scopeName);
+    std::string hlGroup = mapScopeToHighlightGroup(scopeName);
+    if (!groupName.empty() && !hlGroup.empty()) {
+      os << "highlight default link " << groupName << " " << hlGroup << "\n";
+    }
   }
 
   // Footer

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -79,6 +80,13 @@ private:
 
   // Escape string for Vim syntax
   std::string escapeVimString(const std::string &str) const;
+
+  // Map TextMate scope to Vim highlight group
+  std::string mapScopeToHighlightGroup(const std::string &scope) const;
+
+  // Collect all syntax groups from patterns
+  void collectSyntaxGroups(const std::vector<Pattern> &patterns,
+                           std::set<std::string> &groups) const;
 
   // Initialize Oniguruma (if needed)
   void initializeOniguruma();
