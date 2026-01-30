@@ -1,4 +1,5 @@
 #include "tmlanguage2vimsyntax.hxx"
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -662,9 +663,113 @@ void TmLanguage2VimSyntax::generateSyntaxRules(
 }
 
 void TmLanguage2VimSyntax::generateRepositoryRules(std::ostream &os) const {
+  // Define priority order - specific patterns first, generic patterns last
+  std::vector<std::string> priorityOrder = {"keywords",
+                                            "package_name",
+                                            "import",
+                                            "imports",
+                                            "comments",
+                                            "string_literals",
+                                            "raw_string_literals",
+                                            "runes",
+                                            "numeric_literals",
+                                            "storage_types",
+                                            "built_in_functions",
+                                            "operators",
+                                            "delimiters",
+                                            "language_constants"};
+
+  std::vector<std::string> lowPriorityOrder = {
+      "other_variables", "variable_assignment",
+      "other_struct_interface_expressions"};
+
+  std::set<std::string> processed;
+
+  // Output high priority rules first
+  for (const auto &name : priorityOrder) {
+    auto it = grammar_.repository.rules.find(name);
+    if (it != grammar_.repository.rules.end()) {
+      os << "\" Repository rule: " << name << "\n";
+
+      // Special handling for keywords - convert simple \b word \b patterns to
+      // syntax keyword
+      if (name == "keywords") {
+        // Extract keywords and use syntax keyword which has highest priority
+        std::set<std::string> handledPatterns;
+        for (const auto &pattern : it->second.patterns) {
+          if (!pattern.match.empty() && !pattern.name.empty()) {
+            std::string groupName = convertScopeToVim(pattern.name);
+            if (!groupName.empty()) {
+              bool handled = false;
+              // Check if it's a simple keyword pattern like
+              // \b(word1|word2|...)\b
+              std::string match = pattern.match;
+              if (match.find("\\b(") != std::string::npos &&
+                  match.find(")\\b") != std::string::npos &&
+                  match.find("|") != std::string::npos) {
+                // Extract keywords from pattern
+                size_t start = match.find("\\b(") + 3;
+                size_t end = match.find(")\\b");
+                if (start < end) {
+                  std::string keywords = match.substr(start, end - start);
+                  // Replace | with space for syntax keyword
+                  std::replace(keywords.begin(), keywords.end(), '|', ' ');
+                  os << "syntax keyword " << groupName << " " << keywords
+                     << "\n";
+                  handledPatterns.insert(pattern.name);
+                  handled = true;
+                }
+              }
+              // For single keyword patterns like \bfunc\b
+              if (!handled && match.find("\\b") == 0 &&
+                  match.rfind("\\b") == match.length() - 2) {
+                std::string keyword = match.substr(2, match.length() - 4);
+                if (keyword.find('\\') == std::string::npos &&
+                    keyword.find('(') == std::string::npos) {
+                  os << "syntax keyword " << groupName << " " << keyword
+                     << "\n";
+                  handledPatterns.insert(pattern.name);
+                  handled = true;
+                }
+              }
+            }
+          }
+        }
+        // Don't generate syntax match for patterns we've handled with syntax
+        // keyword Skip generateSyntaxRules for keywords
+        processed.insert(name);
+        continue;
+      }
+
+      // Special handling for package_name - add package keyword first
+      if (name == "package_name") {
+        os << "syntax keyword Go_keyword_package_go package\n";
+      }
+
+      generateSyntaxRules(os, {it->second});
+      processed.insert(name);
+    }
+  }
+
+  // Output medium priority rules (everything else except low priority)
   for (const auto &[name, rule] : grammar_.repository.rules) {
-    os << "\" Repository rule: " << name << "\n";
-    generateSyntaxRules(os, {rule});
+    if (processed.find(name) == processed.end() &&
+        std::find(lowPriorityOrder.begin(), lowPriorityOrder.end(), name) ==
+            lowPriorityOrder.end()) {
+      os << "\" Repository rule: " << name << "\n";
+      generateSyntaxRules(os, {rule});
+      processed.insert(name);
+    }
+  }
+
+  // Output low priority rules last
+  for (const auto &name : lowPriorityOrder) {
+    auto it = grammar_.repository.rules.find(name);
+    if (it != grammar_.repository.rules.end()) {
+      os << "\" Repository rule: " << name << "\n";
+      generateSyntaxRules(os, {it->second});
+      processed.insert(name);
+    }
   }
 }
 
